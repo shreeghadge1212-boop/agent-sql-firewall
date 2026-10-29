@@ -7,7 +7,7 @@ Designed specifically to catch and block destructive, rogue, or hallucinated dat
 ## The Problem
 Proxying your database traffic through a third-party AI gateway introduces unnecessary security risks and compliance friction. 
 
-**agent-sql-firewall** runs 100% locally on your infrastructure. Local run hone se koi third party tumhari queries ya data kabhi nahi dekhta, isliye extra vendor review aur paperwork ki zaroorat kam hoti hai.
+**agent-sql-firewall** Because it runs locally, no third party ever sees your queries or data, drastically reducing vendor security review cycles and compliance paperwork.
 
 ## Features
 - **AST Parsing, Not Regex:** Blocks risky SQL by checking its parsed syntax tree, not regex. It understands the actual structure of the query.
