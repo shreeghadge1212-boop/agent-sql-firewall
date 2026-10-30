@@ -9,6 +9,7 @@
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
+    "nodemailer": "^10.3.1",
     "pgsql-ast-parser": "^12.0.2"
   },
   "devDependencies": {
@@ -18,7 +19,15 @@
     "typescript": "^5.0.0"
   },
   "keywords": [
-    "llm", "agent", "sql", "firewall", "security", "ast", "express", "middleware", "mcp"
+    "llm",
+    "agent",
+    "sql",
+    "firewall",
+    "security",
+    "ast",
+    "express",
+    "middleware",
+    "mcp"
   ],
   "author": "Sarth Ghadge",
   "license": "MIT"
