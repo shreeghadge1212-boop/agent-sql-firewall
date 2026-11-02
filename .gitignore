@@ -1,0 +1,12 @@
+node_modules
+dist
+coverage
+.stryker-tmp
+reports
+.env
+send.js
+results.txt
+test-output.txt
+corpus.jsonl
+run-corpus.mjs
+bench/results.json
