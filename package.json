@@ -9,11 +9,19 @@
     "url": "git+https://github.com/shreeghadge1212-boop/agent-sql-firewall.git"
   },
   "homepage": "https://github.com/shreeghadge1212-boop/agent-sql-firewall#readme",
-  "bugs": { "url": "https://github.com/shreeghadge1212-boop/agent-sql-firewall/issues" },
+  "bugs": {
+    "url": "https://github.com/shreeghadge1212-boop/agent-sql-firewall/issues"
+  },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
-  "files": ["dist", "README.md", "LICENSE"],
-  "engines": { "node": ">=20" },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
   "sideEffects": false,
   "scripts": {
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
@@ -29,14 +37,34 @@
     "pgsql-ast-parser": "^12.0.2"
   },
   "devDependencies": {
+    "@stryker-mutator/core": "^10.1.1",
+    "@stryker-mutator/vitest-runner": "^10.1.1",
     "@types/express": "^4.17.21",
     "@types/node": "^20.19.43",
+    "@types/pg": "^8.23.1",
+    "@types/supertest": "^7.2.1",
+    "@vitest/coverage-v8": "^4.1.12",
     "express": "^4.19.2",
+    "fast-check": "^4.10.2",
+    "pg": "^8.23.1",
+    "supertest": "^7.3.1",
     "tsx": "^4.23.15",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.12"
   },
   "keywords": [
-    "llm", "ai-agents", "agent", "sql", "postgres", "firewall", "security",
-    "sql-injection", "ast", "express", "middleware", "langchain", "mcp"
+    "llm",
+    "ai-agents",
+    "agent",
+    "sql",
+    "postgres",
+    "firewall",
+    "security",
+    "sql-injection",
+    "ast",
+    "express",
+    "middleware",
+    "langchain",
+    "mcp"
   ]
 }
