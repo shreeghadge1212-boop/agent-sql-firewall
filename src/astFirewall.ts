@@ -67,6 +67,8 @@ export interface DecisionEvent {
 }
 
 export interface FirewallOptions {
+  /** Allowed columns for bounded WHERE clauses on mutations. Default: ['id'] */
+  uniqueKeyColumns?: string[];
   /** Enforce that every SELECT/UPDATE/DELETE filters by a tenant identifier column */
   requireTenantFilter?: boolean;
   /** Allowed column names for tenant scoping (default: tenant_id, org_id, organization_id, workspace_id) */
@@ -83,7 +85,7 @@ export interface FirewallOptions {
   extraBlockedWords?: string[];
   /** Reject SQL longer than this many characters before doing anything else. Default 8192. */
   maxSqlLength?: number;
-  /** Reject SQL with more tokens than this. Default 1200. */
+  /** Reject SQL with more tokens than this. Default 600. */
   maxTokens?: number;
   /** Reject SQL nested deeper than this (parentheses + brackets). Default 24. */
   maxNesting?: number;
@@ -121,20 +123,6 @@ const CACHE_MAX_SQL_LENGTH = 4096;
 
 const DEFAULT_TENANT_COLUMNS = ["tenant_id", "org_id", "organization_id", "workspace_id"];
 
-// High-cardinality primary/unique key identifiers permitted to bound single-row or batch mutations
-const BOUNDED_KEY_COLUMNS = new Set([
-  "id",
-  "user_id",
-  "account_id",
-  "session_id",
-  "ticket_id",
-  "order_id",
-  "notification_id",
-  "item_id",
-  "webhook_id",
-  "uuid",
-]);
-
 // Statements the firewall will even consider. Everything else is rejected before parsing.
 const ALLOWED_START = new Set(["select", "with", "insert", "update", "delete", "values"]);
 const DDL_START = new Set(["drop", "truncate", "alter", "create", "grant", "revoke", "do"]);
@@ -154,7 +142,7 @@ const BLOCKED_WORDS = new Set([
   "repeat",
   "wipe_everything",
 ]);
-const BLOCKED_PREFIXES = ["pg_", "lo_", "dblink", "txid_"];
+const BLOCKED_PREFIXES = ["pg_", "dblink", "txid_"];
 
 // Kept for clearer error codes in the AST layer.
 const BLOCKED_FUNCTIONS = new Set([
@@ -235,6 +223,7 @@ function stringList(value: unknown): string[] {
 // ---------------------------------------------------------------------------
 
 interface ResolvedConfig {
+  uniqueKeyCols: Set<string>;
   maxSqlLength: number;
   maxTokens: number;
   maxNesting: number;
@@ -253,6 +242,9 @@ interface ResolvedConfig {
 
 function resolveConfig(options: FirewallOptions): ResolvedConfig {
   const opts: FirewallOptions = options && typeof options === "object" ? options : {};
+  const uniqueKeyCols = new Set<string>(
+    Array.isArray(opts.uniqueKeyColumns) ? stringList(opts.uniqueKeyColumns) : ["id"]
+  );
   const tenantCols = new Set<string>(
     Array.isArray(opts.tenantColumns) ? stringList(opts.tenantColumns) : DEFAULT_TENANT_COLUMNS
   );
@@ -260,6 +252,7 @@ function resolveConfig(options: FirewallOptions): ResolvedConfig {
   stringList(opts.extraAllowedFunctions).forEach((f) => allowedFunctions.add(f));
   const tables = stringList(opts.allowedTables);
   return {
+    uniqueKeyCols,
     maxSqlLength: positiveInt(opts.maxSqlLength, DEFAULT_MAX_SQL_LENGTH),
     maxTokens: positiveInt(opts.maxTokens, DEFAULT_MAX_TOKENS),
     maxNesting: positiveInt(opts.maxNesting, DEFAULT_MAX_NESTING),
@@ -854,7 +847,7 @@ function inspectStatement(stmt: any, ctx: InspectCtx, depth: number): void {
     if (stmt.insert) inspectStatement(stmt.insert, ctx, depth + 1);
     if (stmt.insert && stmt.insert.type === "select") {
       if (stmt.onConflict && stmt.onConflict.do && stmt.onConflict.do !== "do nothing") {
-        if (!stmt.insert.where || !isBoundedWhere(stmt.insert.where)) {
+        if (!stmt.insert.where || !isBoundedWhere(stmt.insert.where, ctx)) {
           add("UNBOUNDED_UPSERT", "INSERT ... SELECT with ON CONFLICT DO UPDATE lacks a bounded WHERE clause.");
         }
       }
@@ -870,7 +863,7 @@ function inspectStatement(stmt: any, ctx: InspectCtx, depth: number): void {
     add("UNBOUNDED_MUTATION", `${type.toUpperCase()} statement is missing a WHERE clause.`);
     return;
   }
-  if (!isBoundedWhere(stmt.where)) {
+  if (!isBoundedWhere(stmt.where, ctx)) {
     add("UNSAFE_WHERE_BOUNDARY", `${type.toUpperCase()} WHERE clause does not deterministically bound a key.`);
   }
   if (cfg.requireTenantFilter) enforceTenantScope(stmt.where, ctx);
@@ -1050,7 +1043,7 @@ function checkTenantExpr(
   return { hasValidTenantFilter: false, spoofed: false };
 }
 
-function isBoundedWhere(expr: any, depth: number = 0): boolean {
+function isBoundedWhere(expr: any, ctx: InspectCtx, depth: number = 0): boolean {
   if (!expr || typeof expr !== "object" || depth > MAX_AST_DEPTH) return false;
 
   if (expr.type === "binary") {
@@ -1059,25 +1052,25 @@ function isBoundedWhere(expr: any, depth: number = 0): boolean {
     if (op === "AND") {
       // If either side has a tautology, reject; otherwise require at least one bounded key
       if (isTautologyOrSweep(expr.left, 0) || isTautologyOrSweep(expr.right, 0)) return false;
-      return isBoundedWhere(expr.left, depth + 1) || isBoundedWhere(expr.right, depth + 1);
+      return isBoundedWhere(expr.left, ctx, depth + 1) || isBoundedWhere(expr.right, ctx, depth + 1);
     }
 
     if (op === "OR") {
       // Every branch of an OR must independently be safely bounded
-      return isBoundedWhere(expr.left, depth + 1) && isBoundedWhere(expr.right, depth + 1);
+      return isBoundedWhere(expr.left, ctx, depth + 1) && isBoundedWhere(expr.right, ctx, depth + 1);
     }
 
     if (op === "=") {
       const leftCol = extractColumnName(expr.left);
       const rightCol = extractColumnName(expr.right);
       if (leftCol && rightCol) return false; // WHERE id = id
-      if (leftCol && BOUNDED_KEY_COLUMNS.has(leftCol)) return isSafeScalarOrParam(expr.right, 0);
+      if (leftCol && ctx.cfg.uniqueKeyCols.has(leftCol)) return isSafeScalarOrParam(expr.right, 0);
       return false;
     }
 
     if (op === "IN") {
       const leftCol = extractColumnName(expr.left);
-      if (!leftCol || !BOUNDED_KEY_COLUMNS.has(leftCol)) return false;
+      if (!leftCol || !ctx.cfg.uniqueKeyCols.has(leftCol)) return false;
       if (expr.right && expr.right.type === "list" && Array.isArray(expr.right.expressions)) {
         const items: any[] = expr.right.expressions;
         return items.length > 0 && items.length <= 100 && items.every((item: any) => isSafeScalarOrParam(item, 0));

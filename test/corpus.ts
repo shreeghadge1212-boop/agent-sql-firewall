@@ -70,6 +70,7 @@ export const ATTACKS: Record<string, string[]> = {
 export const ATTACK_LIST = Object.entries(ATTACKS).flatMap(([cat, qs]) => qs.map((sql) => ({ cat, sql })));
 
 export const LEGIT: string[] = [
+  'SELECT lo_balance FROM accounts WHERE id = $1',
   'SELECT 1',
   'SELECT 1;',
   'SELECT id, email FROM users WHERE id = 42',
@@ -102,7 +103,6 @@ export const LEGIT: string[] = [
 // Executable documentation of limitations. These are tested with it.fails:
 // they stay green while the limitation exists, and turn red when you fix it (then flip them).
 export const KNOWN_FALSE_POSITIVES = [
-  'SELECT lo_balance FROM accounts WHERE id = $1', // "lo_" prefix block
     'SELECT $$hello$$',  // pgsql-ast-parser cannot parse dollar-quoted strings (fails closed)
   'DELETE FROM sessions WHERE token = $1',          // key columns are hardcoded
   'UPDATE users SET name = $1 WHERE email = $2',
