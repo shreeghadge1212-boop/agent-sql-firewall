@@ -1,115 +1,118 @@
-  # agent-sql-firewall
+# agent-sql-firewall
 
-  [![CI](https://github.com/shreeghadge1212-boop/agent-sql-firewall/actions/workflows/ci.yml/badge.svg)](https://github.com/shreeghadge1212-boop/agent-sql-firewall/actions)
-  [![npm](https://img.shields.io/npm/v/agent-sql-firewall)](https://www.npmjs.com/package/agent-sql-firewall)
-  [![license](https://img.shields.io/npm/l/agent-sql-firewall)](LICENSE)
+[![CI](https://github.com/shreeghadge1212-boop/agent-sql-firewall/actions/workflows/ci.yml/badge.svg)](https://github.com/shreeghadge1212-boop/agent-sql-firewall/actions)
+[![npm](https://img.shields.io/npm/v/agent-sql-firewall)](https://www.npmjs.com/package/agent-sql-firewall)
+[![license](https://img.shields.io/npm/l/agent-sql-firewall)](LICENSE)
 
-  An open-source (MIT) SQL firewall middleware for Node.js and Express. It sits
-  between an AI agent (LangChain, an MCP server, your own code) and Postgres,
-  parses every query, and blocks destructive ones before they reach the database.
+An open-source (MIT) SQL firewall middleware for Node.js and Express. It sits
+between an AI agent (LangChain, an MCP server, your own code) and Postgres,
+parses every query, and blocks destructive ones before they reach the database.
 
-  It blocks things like: `DELETE` or `UPDATE` without a bounded `WHERE`, `DROP`,
-  `TRUNCATE`, `DO` blocks, stacked statements (`SELECT 1; DROP TABLE ...`), writes
-  hidden inside CTEs, side-effect functions (`pg_sleep`, `dblink`, `lo_import`),
-  and access to system catalogs. It fails closed: anything it cannot understand
-  is blocked.
+It blocks things like: `DELETE` or `UPDATE` without a bounded `WHERE`, `DROP`,
+`TRUNCATE`, `DO` blocks, stacked statements (`SELECT 1; DROP TABLE ...`), writes
+hidden inside CTEs, side-effect functions (`pg_sleep`, `dblink`, `lo_import`),
+and access to system catalogs. It fails closed: anything it cannot understand
+is blocked.
 
-  ## Install
+## Install
 
-  ```bash
-  npm install agent-sql-firewall
-  ```
+```bash
+npm install agent-sql-firewall
+```
 
-  ## Quick start
+## Quick start
 
-  ```ts
-  import express from 'express';
-  import { sqlFirewall } from 'agent-sql-firewall';
+```ts
+import express from 'express';
+import { sqlFirewall } from 'agent-sql-firewall';
 
-  const app = express();
-  app.use(express.json());
+const app = express();
+app.use(express.json());
 
-  // Start in monitor mode: it logs what it WOULD block, but blocks nothing.
-  app.post('/agent/query', sqlFirewall({ mode: 'monitor' }), async (req, res) => {
-    const result = await db.query(req.body.query);
-    res.json(result.rows);
-  });
-  ```
+// db is your Postgres client, for example a pg Pool.
+// Start in monitor mode: it logs what it WOULD block, but blocks nothing.
+app.post('/agent/query', sqlFirewall({ mode: 'monitor' }), async (req, res) => {
+  const result = await db.query(req.body.query);
+  res.json(result.rows);
+});
+```
 
-  When you are happy with the logs, switch to enforcing (the default):
+When you are happy with the logs, switch to enforcing (the default):
 
-  ```ts
-  sqlFirewall({ readOnly: true, allowedTables: ['orders', 'customers'] })
-  ```
+```ts
+sqlFirewall({ readOnly: true, allowedTables: ['orders', 'customers'] })
+```
 
-  A blocked request gets HTTP 403 with a request ID and rule codes. The audit log
-  contains a SHA-256 hash of the query, never the SQL text or string literals.
+A blocked request gets HTTP 403 with a request ID and rule codes. The audit log
+contains a SHA-256 hash of the query, never the SQL text or string literals.
 
-  ### Options
+### Options
 
-  | Option | Meaning |
-  |---|---|
-  | `mode` | `'enforce'` (default) or `'monitor'` |
-  | `readOnly` | Block every INSERT, UPDATE and DELETE |
-  - **Identifiers starting with `pg_`, `txid_` or `dblink` are blocked**,
-    even as column name| `uniqueKeyColumns` | Columns considered safe boundaries for writes (default: `['id']`) |
-  | `uniqueKeyColumns` | Columns considered safe boundaries for writes (default: `['id']`) |
-  | `allowedTables` | Only these tables may be touched |s.
-  | `requireTenantFilter`, `expectedTenantId`, `tenantColumns` | Require a tenant filter in WHERE |
-  | `maxTokens` | Reject larger queries (default 600) |
-  | `onAudit` | Your own audit sink (default: JSON line on stdout) |
-  | `exposeViolations` | `'codes'` (default) or `'none'` in the 403 body |
-  | `extractQuery` | Read the SQL from somewhere other than `req.body.query` |
+| Option | Meaning |
+|---|---|
+| `mode` | `'enforce'` (default) or `'monitor'` |
+| `readOnly` | Block every INSERT, UPDATE and DELETE |
+| `allowedTables` | Only these tables may be touched |
+| `uniqueKeyColumns` | Columns considered safe boundaries for writes (default: `['id']`) |
+| `requireTenantFilter`, `expectedTenantId`, `tenantColumns` | Require a tenant filter in WHERE |
+| `maxTokens` | Reject larger queries (default 600) |
+| `onAudit` | Your own audit sink (default: JSON line on stdout) |
+| `exposeViolations` | `'codes'` (default) or `'none'` in the 403 body |
+| `extractQuery` | Read the SQL from somewhere other than `req.body.query` |
 
-  ## What it is not
+## What it is not
 
-  This is one safety layer. It is **not** a replacement for a least-privilege
-  database role, row-level security, or network controls. It is not SOC2
-  certified and has not had an independent security audit.
+This is one safety layer. It is **not** a replacement for a least-privilege
+database role, row-level security, or network controls. It is not SOC2
+certified and has not had an independent security audit.
 
-  ## Performance
+## Performance
 
-  Measured on an Intel i5-13420H, Node v25.9.0, single thread, cache disabled
-  (`npm run bench` reproduces this).
+Measured on an Intel i5-13420H, Node v25.9.0, single thread, cache disabled
+(`npm run bench` reproduces this).
 
-  | Case | p50 | p99 |
-  |---|---|---|
-  | Short legitimate queries (~10-25 tokens) | 0.31 ms | 1.3 ms |
-  | Attacks rejected by the scanner | 0.004 ms | 3.6 ms |
+| Case | p50 | p99 |
+|---|---|---|
+| Short legitimate queries (~10-25 tokens) | 0.31 ms | 1.3 ms |
+| Attacks rejected by the scanner | 0.004 ms | 3.6 ms |
 
-  Cost grows roughly linearly with query size (about 0.03 ms per token), so a
-  100-token query takes about 3 ms. Queries over 600 tokens are rejected by
-  default. The worst valid-but-heavy input we measured took about 25 ms at p99.
-  Checks run synchronously on the event loop, so keep `maxTokens` modest.
+Cost grows roughly linearly with query size (about 0.03 ms per token), so a
+100-token query takes about 3 ms. Queries over 600 tokens are rejected by
+default. The worst valid-but-heavy input we measured took about 25 ms at p99.
+Checks run synchronously on the event loop, so keep `maxTokens` modest.
 
-  ## Known limitations
+## Known limitations
 
-  - **Legitimate writes filtered by non-key columns are blocked** (for example
-    `DELETE ... WHERE token = $1`). By default, only the `id` column is considered
-    a safe boundary. You can configure this with the `uniqueKeyColumns` option
-    (e.g., `uniqueKeyColumns: ['id', 'uuid', 'token']`).
-  - **Tenant checks look only at the outer WHERE clause**, not joins or
-    subqueries. Use Postgres row-level security for real tenant isolation.
-  - **Dollar-quoted strings (`$$text$$`) are not supported by the parser** and
-    are blocked.
-  - **Identifiers starting with `pg_`, `txid_` or `dblink` are blocked**,
-    even as column names.
-  - **Postgres dialect only.** Unusual syntax the parser cannot read is blocked.
-  - A test that runs allowed queries against a real Postgres and counts changed
-    rows is included (`npm run test:pg`), but it is not yet part of CI and its
-    results are not published.
+- **Legitimate writes filtered by non-key columns are blocked** (for example
+  `DELETE ... WHERE token = $1`). By default only the `id` column is considered a
+  safe boundary. Configure this with `uniqueKeyColumns` (for example
+  `uniqueKeyColumns: ['id', 'uuid', 'token']`). List only columns that are truly
+  unique in your schema: a non-unique column lets one statement change many rows.
+- **Tenant checks look only at the outer WHERE clause**, not joins or
+  subqueries. Use Postgres row-level security for real tenant isolation.
+- **Dollar-quoted strings (`$$text$$`) are not supported by the parser** and
+  are blocked.
+- **Identifiers starting with `pg_`, `txid_` or `dblink` are blocked**, even as
+  column names.
+- **Queries over 600 tokens are rejected by default** (`maxTokens`).
+- **Tested with Express 4.** Express 5 is expected to work but is not covered by
+  the tests.
+- **Postgres dialect only.** Unusual syntax the parser cannot read is blocked.
+- A test that runs allowed queries against a real Postgres and counts changed
+  rows is included (`npm run test:pg`), but it is not yet part of CI and its
+  results are not published.
 
-  ## Testing
+## Testing
 
-  `npm test` runs 231 tests: a corpus of 100+ attack vectors and legitimate
-  queries, obfuscation mutations (case, whitespace, comments, Unicode tricks),
-  30,000 random and grammar-generated inputs checked by an independent oracle,
-  worst-case input timing, and middleware tests. Coverage is about 91%.
+`npm test` runs over 230 tests: a corpus of 100+ attack vectors and legitimate
+queries, obfuscation mutations (case, whitespace, comments, Unicode tricks),
+30,000 random and grammar-generated inputs checked by an independent oracle,
+worst-case input timing, and middleware tests. Coverage is about 91%.
 
-  ## Security
+## Security
 
-  Found a bypass? Please open an issue or a private security advisory on GitHub.
+Found a bypass? Please open an issue or a private security advisory on GitHub.
 
-  ## License
+## License
 
-  MIT
+MIT
