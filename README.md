@@ -89,7 +89,11 @@ Checks run synchronously on the event loop, so keep `maxTokens` modest.
   `uniqueKeyColumns: ['id', 'uuid', 'token']`). List only columns that are truly
   unique in your schema: a non-unique column lets one statement change many rows.
 - **Tenant checks look only at the outer WHERE clause**, not joins or
-  subqueries. Use Postgres row-level security for real tenant isolation.
+  subqueries. One matching predicate (for example `t2.tenant_id = 7`) satisfies
+  the check for the whole statement, so other tables in the FROM clause (joined
+  tables, cross joins, a second alias of the same table) are not required to
+  carry their own predicate. Use Postgres row-level security for real tenant
+  isolation.
 - **Dollar-quoted strings (`$$text$$`) are not supported by the parser** and
   are blocked.
 - **Identifiers starting with `pg_`, `txid_` or `dblink` are blocked**, even as
