@@ -116,11 +116,28 @@ export const TENANT_BLOCK = [
   "SELECT * FROM orders WHERE tenant_id <> 'acme'",
   "SELECT * FROM orders WHERE tenant_id = 'acme' OR 1 = 1",
   "SELECT * FROM orders WHERE tenant_id = 'acme' UNION SELECT * FROM secrets",
+  // VALUES is a query in Postgres; a query inside its rows must carry the tenant filter too
+  'VALUES ((SELECT count(*) FROM orders))',
+  'VALUES ((SELECT count(*) FROM (SELECT DISTINCT o.id FROM orders AS o INNER JOIN secrets AS s ON o.id = s.id) AS d))',
+  "VALUES ((SELECT count(*) FROM orders WHERE tenant_id = 'other'))",
+  "VALUES (1, (SELECT count(*) FROM orders WHERE tenant_id = 'acme')), (2, (SELECT count(*) FROM secrets))",
+  'VALUES (1 + (SELECT count(*) FROM orders))',
+  'VALUES (EXISTS (SELECT 1 FROM orders))',
+  'VALUES (ARRAY(SELECT id FROM orders))',
+  'VALUES (1 IN (SELECT id FROM orders))',
+  "VALUES ((SELECT count(*) FROM orders WHERE tenant_id = 'acme' UNION ALL SELECT count(*) FROM secrets))",
+  "WITH c AS (VALUES ((SELECT count(*) FROM orders))) SELECT * FROM c WHERE tenant_id = 'acme'",
+  "INSERT INTO notes (title, tenant_id) VALUES ((SELECT name FROM secrets LIMIT 1), 'acme')",
 ];
 export const TENANT_ALLOW = [
   "SELECT * FROM orders WHERE tenant_id = 'acme'",
   'SELECT * FROM orders WHERE tenant_id = $1',
   "SELECT * FROM orders WHERE tenant_id = 'acme' AND id = $1",
+  // literal VALUES reads no table; a query inside VALUES is allowed when it is tenant-filtered
+  "VALUES (1, 'a')",
+  "VALUES (1, 'a'), (2, 'b')",
+  "VALUES ((SELECT count(*) FROM orders WHERE tenant_id = 'acme'))",
+  "INSERT INTO notes (title, tenant_id) VALUES ($1, 'acme')",
 ];
 export const TENANT_KNOWN_GAPS = [
   "SELECT * FROM orders o JOIN secrets s ON true WHERE o.tenant_id = 'acme'",
