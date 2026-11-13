@@ -69,7 +69,7 @@ export interface DecisionEvent {
 export interface FirewallOptions {
   /** Allowed columns for bounded WHERE clauses on mutations. Default: ['id'] */
   uniqueKeyColumns?: string[];
-  /** Enforce that every SELECT/UPDATE/DELETE filters by a tenant identifier column */
+  /** Enforce that every SELECT/UPDATE/DELETE filters by a tenant identifier column (also queries inside a VALUES list) */
   requireTenantFilter?: boolean;
   /** Allowed column names for tenant scoping (default: tenant_id, org_id, organization_id, workspace_id) */
   tenantColumns?: string[];
@@ -825,7 +825,12 @@ function inspectStatement(stmt: any, ctx: InspectCtx, depth: number): void {
     return;
   }
 
-  if (type === "values") return;
+  // VALUES has no WHERE clause of its own, but its row expressions may hold queries that read
+  // tables: VALUES ((SELECT count(*) FROM orders)). Each such query must pass the same rules.
+  if (type === "values") {
+    if (cfg.requireTenantFilter) inspectValuesQueries(stmt.values, ctx, depth);
+    return;
+  }
 
   if (type === "select") {
     if (cfg.requireTenantFilter) enforceTenantScope(stmt.where, ctx);
@@ -867,6 +872,43 @@ function inspectStatement(stmt: any, ctx: InspectCtx, depth: number): void {
     add("UNSAFE_WHERE_BOUNDARY", `${type.toUpperCase()} WHERE clause does not deterministically bound a key.`);
   }
   if (cfg.requireTenantFilter) enforceTenantScope(stmt.where, ctx);
+}
+
+// Finds the outermost queries inside the rows of a VALUES list and inspects each one as a statement.
+function inspectValuesQueries(rows: any, ctx: InspectCtx, depth: number): void {
+  const stack: any[] = [rows];
+  let visited = 0;
+
+  while (stack.length > 0) {
+    const node = stack.pop();
+    if (node === null || typeof node !== "object") continue;
+    if (++visited > MAX_AST_NODES) {
+      ctx.add("TOO_COMPLEX", "SQL syntax tree is too large.");
+      return;
+    }
+    if (Array.isArray(node)) {
+      for (let i = 0; i < node.length; i++) stack.push(node[i]);
+      continue;
+    }
+
+    const type = node.type;
+    if (
+      type === "select" ||
+      type === "values" ||
+      type === "with" ||
+      type === "with recursive" ||
+      (typeof type === "string" && SET_OPERATIONS.has(type))
+    ) {
+      inspectStatement(node, ctx, depth + 1);
+      continue;
+    }
+
+    const keys = Object.keys(node);
+    for (let k = 0; k < keys.length; k++) {
+      const child = node[keys[k]];
+      if (child !== null && typeof child === "object") stack.push(child);
+    }
+  }
 }
 
 // One iterative walk over the whole syntax tree (no recursion, bounded size).
